@@ -1,7 +1,7 @@
 ---
 title: "Client Report - Late Flights & Missing Data (JSON)"
 subtitle: "Course DS 250"
-author: "[STUDENT NAME]"
+author: "Sydney Ahlstrom"
 format:
   html:
     self-contained: true
@@ -17,143 +17,182 @@ format:
     code-overflow: wrap
     code-copy: hover
     code-tools:
-        source: false
-        toggle: true
-        caption: See code
-execute: 
+      source: false
+      toggle: true
+      caption: See code
+execute:
   warning: false
-    
 ---
 
 ```{python}
-import pandas as pd 
+import pandas as pd
 import numpy as np
-import sqlite3
+import json
 from lets_plot import *
+import requests
 
 LetsPlot.setup_html(isolated_frame=True)
-```
+
+# Load JSON data
+url = 'https://github.com/byuidatascience/data4missing/raw/master/data-raw/flights_missing/flights_missing.json'
+response = requests.get(url)
+raw_json = response.json()
 
 
-```{python}
-# Learn morea about Code Cells: https://quarto.org/docs/reference/cells/cells-jupyter.html
-
-# Include and execute your code here
-sqlite_file = 'lahmansbaseballdb.sqlite'
-# this file must be in the same location as your .qmd or .py file
-con = sqlite3.connect(sqlite_file)
+# Normalize to DataFrame
+df = pd.json_normalize(raw_json)
 ```
 
 ## Elevator pitch
 _A SHORT (2-3 SENTENCES) PARAGRAPH THAT `DESCRIBES KEY INSIGHTS` TAKEN FROM METRICS IN THE PROJECT RESULTS THINK TOP OR MOST IMPORTANT RESULTS._ (Note: this is not a summary of the project, but a summary of the results.)
 
-_A Client has requested this analysis and this is your one shot of what you would say to your boss in a 2 min elevator ride before he takes your report and hands it to the client._
+San Francisco and Chicago O’Hare airports experience the most significant delays, especially during summer. September is the best month to fly for fewer delays. Mild weather delays are more impactful than reported, affecting up to 15% of flights at some airports.
 
 ## QUESTION|TASK 1
 
-__Write an SQL query to create a new dataframe about baseball players who attended BYU-Idaho. The new table should contain five columns: playerID, schoolID, salary, and the yearID/teamID associated with each salary. Order the table by salary (highest to lowest) and print out the table in your report.__  
+__Fix all of the varied missing data types in the data to be consistent (all missing values should be displayed as “NaN”).__ In your report include one record example (one row) from your new data, in the raw JSON format. Your example should display the "NaN" for at least one missing value.__  
 
-_type your results and analysis here_
+All inconsistent missing values were standardized to NaN for analysis. Below is an example row from the cleaned dataset in JSON format, showing at least one missing value. This makes sure future processing treats all missing values uniformly.
 
 ```{python}
-# Include and execute your code here
+# Task 1: Replace inconsistent missing values
+df.replace(["", None, -999, "n/a"], np.nan, inplace=True)
 
-
+# Show example row as JSON (with NaN included)
+example_row = df.iloc[2].to_dict()
+json.dumps(example_row, indent=2, default=str)
 ```
-
 
 ## QUESTION|TASK 2
 
-__This three-part question requires you to calculate batting average (number of hits divided by the number of at-bats)__  
-    a. Write an SQL query that provides playerID, yearID, and batting average for players with at least 1 at bat that year. Sort the table from highest batting average to lowest, and then by playerid alphabetically. Show the top 5 results in your report.  
-    a. Use the same query as above, but only include players with at least 10 at bats that year. Print the top 5 results.  
-    a. Now calculate the batting average for players over their entire careers (all years combined). Only include players with at least 100 at bats, and print the top 5 results.  
+__Which airport has the worst delays?__ Describe the metric you chose, and why you chose it to determine the “worst” airport. Your answer should include a summary table that lists (for each airport) the total number of flights, total number of delayed flights, proportion of delayed flights, and average delay time in hours.   
 
-_type your results and analysis here_
+San Francisco International and Chicago O’Hare had the highest average delays. San Francisco had the longest delays overall, despite fewer delays proportionally, this shows the importance of duration over frequency when talking about disruption severity.
 
 ```{python}
-# Include and execute your code here
+summary = df.groupby("airport_name").agg({
+    "num_of_flights_total": "sum",
+    "num_of_delays_total": "sum",
+    "minutes_delayed_total": "sum"
+}).reset_index()
 
+summary["proportion_delayed"] = summary["num_of_delays_total"] / summary["num_of_flights_total"]
+summary["avg_delay_hours"] = summary["minutes_delayed_total"] / summary["num_of_flights_total"] / 60
 
+# Sort by average delay
+summary_sorted = summary.sort_values("avg_delay_hours", ascending=False).reset_index(drop=True)
+
+# Display top 5 worst airports
+summary_sorted.head()
 ```
-
-```{python}
-# Include and execute your code here
-
-
-```
-
-```{python}
-# Include and execute your code here
-
-
-```
-
 
 ## QUESTION|TASK 3
 
-__Pick any two baseball teams and compare them using a metric of your choice (average salary, home runs, number of wins, etc). Write an SQL query to get the data you need, then make a graph using Lets-Plot to visualize the comparison. What do you learn?__
+__What is the best month to fly if you want to avoid delays of any length?__ Describe the metric you chose and why you chose it to calculate your answer. Include one chart to help support your answer, with the x-axis ordered by month. (To answer this question, you will need to remove any rows that are missing the `Month` variable.)  
 
-_type your results and analysis here_
+September had the lowest average delays, while July and December had the worst. Flying in early fall is best for minimizing disruption.
 
 ```{python}
-# Include and execute your code here
+month_df = df.dropna(subset=["month"]).copy()
+month_df["month"] = month_df["month"].str.capitalize()
 
+monthly_summary = month_df.groupby("month").agg({
+    "minutes_delayed_total": "sum",
+    "num_of_flights_total": "sum"
+}).reset_index()
+
+monthly_summary["avg_delay"] = monthly_summary["minutes_delayed_total"] / monthly_summary["num_of_flights_total"] / 60
+
+month_order = ["January", "February", "March", "April", "May", "June",
+               "July", "August", "September", "October", "November", "December"]
+monthly_summary["month"] = pd.Categorical(monthly_summary["month"], categories=month_order, ordered=True)
+monthly_summary.sort_values("month", inplace=True)
+
+ggplot(monthly_summary, aes(x="month", y="avg_delay")) + \
+    geom_line(color='blue') + geom_point(size=3) + \
+    labs(title="Average Flight Delay per Month",
+         x="Month", y="Avg Delay (Hours)") + \
+    theme(axis_text_x=element_text(angle=45, hjust=1))
 ```
 
----
+## QUESTION|TASK 4
+
+According to the BTS website, the “Weather” category only accounts for severe weather delays. Mild weather delays are not counted in the “Weather” category, but are actually included in both the “NAS” and “Late-Arriving Aircraft” categories. __Your job is to create a new column that calculates the total number of flights delayed by weather (both severe and mild).__ You will need to replace all the missing values in the Late Aircraft variable with the mean. Show your work by printing the first 5 rows of data in a table. Use these three rules for your calculations:  
+
+    a. 100% of delayed flights in the Weather category are due to weather  
+    a. 30% of all delayed flights in the Late-Arriving category are due to weather  
+    a. From April to August, 40% of delayed flights in the NAS category are due to weather. The rest of the months, the proportion rises to 65%    
+
+Missing values in the Late Aircraft field were filled with the column mean. The results show that weather-related issues often extend beyond officially categorized weather delays, showing hidden weather impact.
+
+```{python}
+df["num_of_delays_late_aircraft"] = df["num_of_delays_late_aircraft"].fillna(
+    df["num_of_delays_late_aircraft"].mean())
+
+def calc_weather_delay(row):
+    delay = 0
+    if not pd.isna(row["minutes_delayed_weather"]):
+        delay += row["minutes_delayed_weather"]
+    if not pd.isna(row["minutes_delayed_late_aircraft"]):
+        delay += 0.3 * row["minutes_delayed_late_aircraft"]
+    if not pd.isna(row["minutes_delayed_nas"]):
+        if str(row["month"]).lower() in ["april", "may", "june", "july", "august"]:
+            delay += 0.4 * row["minutes_delayed_nas"]
+        else:
+            delay += 0.65 * row["minutes_delayed_nas"]
+    return delay
+
+df["total_weather_delay"] = df.apply(calc_weather_delay, axis=1)
+
+# Show relevant fields
+df[["airport_code", "month", "minutes_delayed_weather", "minutes_delayed_late_aircraft", 
+    "minutes_delayed_nas", "total_weather_delay"]].head()
+```
+
+## QUESTION|TASK 5
+
+__Using the new weather variable calculated above, create a barplot showing the proportion of all flights that are delayed by weather at each airport. Describe what you learn from this graph.__  
+
+A bar chart shows the proportion of total flights delayed by weather for each airport. Airports like Atlanta and Denver had high weather-related delay rates. This insight can guide airlines and passengers to anticipate seasonal and regional risks.
+
+```{python}
+weather_by_airport = df.groupby("airport_code").agg({
+    "total_weather_delay": "sum",
+    "num_of_flights_total": "sum"
+}).reset_index()
+
+weather_by_airport["prop_weather_delay"] = weather_by_airport["total_weather_delay"] / weather_by_airport["num_of_flights_total"]
+
+ggplot(weather_by_airport, aes(x="airport_code", y="prop_weather_delay")) + \
+    geom_bar(stat="identity", fill="#87CEEB") + \
+    labs(title="Proportion of Flights Delayed by Weather",
+         x="Airport Code", y="Proportion Delayed") + \
+    theme(axis_text_x=element_text(angle=45, hjust=1))
+```
 
 ## STRETCH QUESTION|TASK 1
 
-__Advanced Salary Distribution by Position (with Case Statement):__  
+__Which delay is the worst delay?__ Create a similar analysis as above for Weahter Delay with: Carrier Delay and Security Delay. Compare the proportion of delay for each of the three categories in a Chart and a Table. Describe your results.
 
-    * Write an SQL query that provides a summary table showing the average salary for players in each position (e.g., pitcher, catcher, outfielder) across all years. Include the following columns:
+Carrier delays are the most frequent, suggesting airline-specific issues are the leading cause of disruptions.
 
-        * position
-        * average_salary
-        * total_players
-        * highest_salary  
+Weather is the second most common.
 
-    * The highest_salary column should display the highest salary ever earned by a player in that position. If no player in that position has a recorded salary, display “N/A” for the highest salary.  
-
-    * Additionally, create a new column called salary_category using a case statement:  
-
-        * If the average salary is above $1 million, categorize it as “High Salary.”  
-        * If the average salary is between $500,000 and $1 million, categorize it as “Medium Salary.”  
-        * Otherwise, categorize it as “Low Salary.”  
-
-    * Order the table by average salary in descending order.
-    * Print the top 10 rows of this summary table.  
-
-_type your results and analysis here_
+Security delays are negligible.
 
 ```{python}
-# Include and execute your code here
+categories = ["minutes_delayed_weather", "minutes_delayed_carrier", "minutes_delayed_security"]
+delay_summary = df[categories + ["num_of_flights_total"]].copy()
+for col in categories:
+    delay_summary[col] = delay_summary[col].fillna(0)
+    delay_summary[col] = delay_summary[col] / delay_summary["num_of_flights_total"]
 
+avg_delays = delay_summary[categories].mean().reset_index()
+avg_delays.columns = ["delay_type", "avg_delay_proportion"]
+avg_delays["delay_type"] = avg_delays["delay_type"].str.replace("minutes_delayed_", "").str.capitalize()
 
+ggplot(avg_delays, aes(x="delay_type", y="avg_delay_proportion")) + \
+    geom_bar(stat="identity", fill="#FF7F50") + \
+    labs(title="Average Proportion of Flights Delayed by Type",
+         x="Delay Type", y="Proportion of Flights Delayed")
 ```
-
-
-## STRETCH QUESTION|TASK 2
-
-__Advanced Career Longevity and Performance (with Subqueries):__
-
-    * Calculate the average career length (in years) for players who have played at least one game. Then, identify the top 10 players with the longest careers (based on the number of years they played). Include their:  
-
-        * playerID
-        * first_name
-        * last_name
-        * career_length
-
-    * The career_length should be calculated as the difference between the maximum and minimum yearID for each player. 
-
-_type your results and analysis here_
-
-```{python}
-# Include and execute your code here
-
-
-```
-
----
-
