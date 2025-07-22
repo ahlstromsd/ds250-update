@@ -178,7 +178,7 @@ Carrier delays are the most frequent, suggesting airline-specific issues are the
 
 Weather is the second most common.
 
-Security delays are negligible.
+Security delays don't really happen.
 
 ```{python}
 categories = ["minutes_delayed_weather", "minutes_delayed_carrier", "minutes_delayed_security"]
