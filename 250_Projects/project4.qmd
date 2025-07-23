@@ -1,7 +1,7 @@
 ---
 title: "Client Report - Can You Predict That?"
 subtitle: "Course DS 250"
-author: "[STUDENT NAME]"
+author: "Sydney Ahlstrom"
 format:
   html:
     self-contained: true
@@ -41,25 +41,47 @@ LetsPlot.setup_html(isolated_frame=True)
 # Include and execute your code here
 
 # import your data here using pandas and the URL
+# Load the housing data
+url = "https://github.com/byuidatascience/data4dwellings/raw/master/data-raw/dwellings_ml/dwellings_ml.csv"
+df = pd.read_csv(url)
 
+# Convert before1980 to a string for categorical plotting
+df['before1980'] = df['before1980'].astype(str)
+
+# Display initial rows
+df.head()
 
 ```
 
 ## Elevator pitch
 _A SHORT (2-3 SENTENCES) PARAGRAPH THAT `DESCRIBES KEY INSIGHTS` TAKEN FROM METRICS IN THE PROJECT RESULTS THINK TOP OR MOST IMPORTANT RESULTS._ (Note: this is not a summary of the project, but a summary of the results.)
 
-_A Client has requested this analysis and this is your one shot of what you would say to your boss in a 2 min elevator ride before he takes your report and hands it to the client._
+Homes built before 1980 show clear differences in the structural characteristics they used compared to newer homes. They have smaller finished basements and lower living area square footage. The differences we found show strong predictors for building a classification model to decide whether a home was built before 1980 or not.
 
 ## QUESTION|TASK 1
 
 __Create 2-3 charts that evaluate potential relationships between the home variables and `before1980`.__ Explain what you learn from the charts that could help a machine learning algorithm. 
 
-_type your results and analysis here_
+These can show that things like living area, finished basements, and bedroom numbers can help a machine learning model learn patterns associated with the before 1980 homes.
 
 ```{python}
-# Include and execute your code here
+# 1. Living Area vs. before1980
+ggplot(df, aes(x='livearea', fill='before1980')) + \
+    geom_density(alpha=0.5) + \
+    ggtitle("Living Area Distribution by Home Age") + \
+    xlab("Living Area (sqft)") + ylab("Density")
 
+# 2. Finished Basement vs. before1980
+ggplot(df, aes(x='finbsmnt', fill='before1980')) + \
+    geom_density(alpha=0.5) + \
+    ggtitle("Finished Basement Area by Home Age") + \
+    xlab("Finished Basement (sqft)") + ylab("Density")
 
+# 3. Number of Bedrooms vs. before1980
+ggplot(df, aes(x='numbdrm', fill='before1980')) + \
+    geom_bar(position='dodge') + \
+    ggtitle("Number of Bedrooms by Home Age") + \
+    xlab("Bedrooms") + ylab("Count")
 ```
 
 
@@ -67,12 +89,51 @@ _type your results and analysis here_
 
 __Build a classification model labeling houses as being built “before 1980” or “during or after 1980”.__ Your goal is to reach or exceed 90% accuracy. Explain your final model choice (algorithm, tuning parameters, etc) and describe what other models you tried.  
 
-_type your results and analysis here_
+I chose a Random Forest Classifier because of its strong performance on mixed tabular data, modeing nonlinear interactions, and built-in handling of categories.
 
 ```{python}
-# Include and execute your code here
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score, classification_report
+from sklearn.preprocessing import StandardScaler
 
+# Drop non-numeric or ID-like columns
+df_model = df.copy()
+df_model = df_model.drop(columns=["parcel"])  # parcel is just an ID
+df_model = df_model.dropna()  # drop missing rows for simplicity
 
+# Separate target and features
+X = df_model.drop(columns=["before1980"])
+y = df_model["before1980"].astype(int)  # convert to 0/1
+
+# Split the data
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.25, random_state=42)
+
+# Train Random Forest
+rf = RandomForestClassifier(n_estimators=100, random_state=42)
+rf.fit(X_train, y_train)
+
+# Predict and evaluate
+y_pred = rf.predict(X_test)
+accuracy = accuracy_score(y_test, y_pred)
+report = classification_report(y_test, y_pred)
+
+print(f"Accuracy: {accuracy:.2%}")
+print(report)
+
+# Feature importance plot
+import matplotlib.pyplot as plt
+
+importances = rf.feature_importances_
+feature_names = X.columns
+indices = np.argsort(importances)[::-1]
+
+plt.figure(figsize=(10,6))
+plt.title("Feature Importance")
+plt.bar(range(10), importances[indices][:10], align="center")
+plt.xticks(range(10), feature_names[indices][:10], rotation=45)
+plt.tight_layout()
+plt.show()
 ```
 
 
@@ -80,11 +141,24 @@ _type your results and analysis here_
 
 __Justify your classification model by discussing the most important features selected by your model.__ This discussion should include a feature importance chart and a description of the features. 
 
-_type your results and analysis here_
+The Random Forest model showed a few things that contributed most to predicting whether a house was built before 1980.
 
 ```{python}
-# Include and execute your code here
+# Feature importance chart
+import matplotlib.pyplot as plt
 
+importances = rf.feature_importances_
+feature_names = X.columns
+indices = np.argsort(importances)[::-1]
+
+# Plot top 10 features
+plt.figure(figsize=(10,6))
+plt.title("Top 10 Feature Importances for Predicting before1980")
+plt.bar(range(10), importances[indices][:10], align="center", color="teal")
+plt.xticks(range(10), feature_names[indices][:10], rotation=45)
+plt.ylabel("Importance")
+plt.tight_layout()
+plt.show()
 ```
 
 
@@ -92,11 +166,25 @@ _type your results and analysis here_
 
 __Describe the quality of your classification model using 2-3 different evaluation metrics.__ You also need to explain how to interpret each of the evaluation metrics you use.  
 
-_type your results and analysis here_
+I evaluated the model using these metrics:
+
+- Accuracy: measures the overall correctness of the model.
+  
+- Precision: for the "before 1980" class indicates the percentage of homes predicted as "before 1980" that were actually built before 1980.
+  
+- Recall: tells us how many of the actual "before 1980" homes were correctly identified.
 
 ```{python}
-# Include and execute your code here
+from sklearn.metrics import accuracy_score, precision_score, recall_score
 
+# Recalculate metrics
+accuracy = accuracy_score(y_test, y_pred)
+precision = precision_score(y_test, y_pred)
+recall = recall_score(y_test, y_pred)
+
+print(f"Accuracy: {accuracy:.2%}")
+print(f"Precision: {precision:.2%}")
+print(f"Recall: {recall:.2%}")
 ```
 
 ---
