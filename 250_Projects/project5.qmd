@@ -1,7 +1,7 @@
 ---
 title: "Client Report - The War with Star Wars"
 subtitle: "Course DS 250"
-author: "[STUDENT NAME]"
+author: "Sydney Ahlstrom"
 format:
   html:
     self-contained: true
@@ -41,7 +41,11 @@ LetsPlot.setup_html(isolated_frame=True)
 # Include and execute your code here
 
 # import your data here using pandas and the URL
+url = "https://github.com/fivethirtyeight/data/raw/master/star-wars-survey/StarWars.csv"
+df = pd.read_csv(url, encoding="ISO-8859-1")
 
+
+print(df.columns.tolist())
 
 ```
 
@@ -57,9 +61,61 @@ __Shorten the column names and clean them up for easier use with pandas.__ Provi
 _type your results and analysis here_
 
 ```{python}
-# Include and execute your code here
+# Load original column names
+original_columns = df.columns.tolist()
 
+# Define manual renames
+manual_renames = {
+    'respondentid': 'id',
+    'which_episode_s': 'seen_ep_',
+    'which_of_the_following_characters_do_you_view_favorably': 'char_fav_',
+    'do_you_consider_yourself_to_be_a_fan_of_the_star_wars_film_series': 'fan'
+}
+protected_names = [
+    'age',
+    'household_income',
+    'education',
+    'location',
+]
 
+# Clean column names
+cleaned_columns = []
+for col in df.columns:
+    original_col = col  # preserve original
+
+    # Strip and lowercase
+    clean = col.strip().lower()
+
+    # Preserve protected columns exactly as-is
+    if any(protected in clean for protected in protected_names):
+        cleaned_columns.append(clean)
+        continue
+
+    # Clean up
+    clean = clean.replace(' ', '_').replace('-', '_').replace('(', '').replace(')', '').replace('?', '')
+    clean = clean.replace(':', '').replace('/', '_')
+    clean = clean.replace('__', '_')  # remove any double underscores
+
+    # Apply manual renames
+    for key in manual_renames:
+        if clean.startswith(key):
+            clean = clean.replace(key, manual_renames[key])
+
+    cleaned_columns.append(clean)
+
+# Apply cleaned names
+df.columns = cleaned_columns
+
+# Show all current column names
+print("\nCleaned column names:")
+print(df.columns.tolist())
+
+# Side-by-side table of changes
+name_table = pd.DataFrame({
+    "Original Name": original_columns,
+    "Cleaned Name": df.columns
+})
+name_table.head(20)
 ```
 
 
@@ -76,39 +132,80 @@ __Clean and format the data so that it can be used in a machine learning model._
 _type your results and analysis here_
 
 ```{python}
-# Include and execute your code here
+seen_cols = [col for col in df.columns if col.startswith("seen_ep_")]
 
-
+df_filtered = df[df[seen_cols].notna().any(axis=1)].copy()
+print(f"Filtered from {len(df)} to {len(df_filtered)} rows")
 ```
 
 ```{python}
-# Include and execute your code here
+# Check the name
+print(df_filtered.columns.tolist())
 
+df_filtered[['age']].dropna().value_counts()
 
+# Map age ranges
+age_map = {
+    '18-29': 24,
+    '30-44': 37,
+    '45-60': 52,
+    '> 60': 65
+}
+
+df_filtered['age_num'] = df_filtered['age'].map(age_map)
+df_filtered.drop(columns=['age'], inplace=True)
 ```
 
 ```{python}
-# Include and execute your code here
+# Check values
+df_filtered['education'].value_counts()
 
+# Map to levels
+edu_map = {
+    'Less than high school degree': 10,
+    'High school degree': 12,
+    'Some college or Associate degree': 14,
+    'Bachelor degree': 16,
+    'Graduate degree': 18
+}
 
+df_filtered['education_num'] = df_filtered['education'].map(edu_map)
+df_filtered.drop(columns=['education'], inplace=True)
 ```
 
 ```{python}
-# Include and execute your code here
+# Check values
+df_filtered['household_income'].value_counts()
 
+# Map to dollar values
+income_map = {
+    '$0 - $24,999': 12500,
+    '$25,000 - $49,999': 37500,
+    '$50,000 - $99,999': 75000,
+    '$100,000 - $149,999': 125000,
+    '$150,000+': 175000,
+    'Prefer not to answer': np.nan
+}
 
+df_filtered['income_num'] = df_filtered['household_income'].map(income_map)
+df_filtered.drop(columns=['household_income'], inplace=True)
 ```
 
 ```{python}
-# Include and execute your code here
-
-
+# Target variable: 1 if income > 50k, 0 otherwise
+df_filtered['target_income_over_50k'] = (df_filtered['income_num'] > 50000).astype(int)
 ```
 
 ```{python}
-# Include and execute your code here
+# Check data types to find categoricals
+categoricals = df_filtered.select_dtypes(include='object').columns.tolist()
 
+# One-hot encode all remaining categoricals
+df_encoded = pd.get_dummies(df_filtered, columns=categoricals, drop_first=True)
 
+# Show final shape and sample
+print(df_encoded.shape)
+df_encoded.head()
 ```
 
 ## QUESTION|TASK 3
@@ -118,13 +215,62 @@ __Validate that the data provided on GitHub lines up with the article by recreat
 _type your results and analysis here_
 
 ```{python}
-# Include and execute your code here
+# Column with movie selections
+seen_col = 'which_of_the_following_star_wars_films_have_you_seen_please_select_all_that_apply.'
 
+# Fill NaNs with empty string to safely split
+df[seen_col] = df[seen_col].fillna("")
+
+# Define mapping from full movie title to short label
+movie_map = {
+    "Star Wars: Episode I  The Phantom Menace": "Ep I",
+    "Star Wars: Episode II  Attack of the Clones": "Ep II",
+    "Star Wars: Episode III  Revenge of the Sith": "Ep III",
+    "Star Wars: Episode IV  A New Hope": "Ep IV",
+    "Star Wars: Episode V The Empire Strikes Back": "Ep V",
+    "Star Wars: Episode VI Return of the Jedi": "Ep VI"
+}
+
+# Create new columns for each movie
+for full_title, short_label in movie_map.items():
+    df[short_label] = df[seen_col].apply(lambda x: full_title in x)
+
+# Calculate percentage seen for each movie
+seen_percent = df[[*movie_map.values()]].mean() * 100
+print("Seen percent:\n", seen_percent)
+
+# Plot
+ggplot() + \
+    geom_bar(aes(x=seen_percent.index, y=seen_percent.values), stat='identity', fill="#1f77b4") + \
+    ggtitle("Percentage of Respondents Who Have Seen Each Star Wars Movie") + \
+    xlab("Movie Episode") + ylab("Percentage Seen") + \
+    theme(axis_text_x=element_text(angle=45, hjust=1))
 ```
 
 ```{python}
-# Include and execute your code here
+# Get favorability columns
+favor_cols = [col for col in df.columns if col.startswith("char_fav_")]
 
+# Calculate % favorability (count non-NA "Very favorably" or "Somewhat favorably")
+def favorable(val):
+    return str(val).strip().lower() in ['very favorably', 'somewhat favorably']
+
+favor_percent = {}
+for col in favor_cols:
+    char = col.replace('char_fav_', '').replace('_', ' ').title()
+    percent = df[col].apply(favorable).mean() * 100
+    favor_percent[char] = percent
+
+# Create a sorted dataframe
+favor_df = pd.DataFrame.from_dict(favor_percent, orient='index', columns=['favorability']).sort_values(by='favorability', ascending=False).reset_index()
+favor_df.columns = ['character', 'favorability']
+
+# Plot
+ggplot(favor_df, aes(x='reorder(character, -favorability)', y='favorability')) + \
+    geom_bar(stat='identity', fill='#ff7f0e') + \
+    ggtitle("Favorability of Major Star Wars Characters") + \
+    xlab("Character") + ylab("Percent Favorable") + \
+    theme(axis_text_x=element_text(angle=45, hjust=1))
 ```
 
 ## QUESTION|TASK 4
@@ -134,8 +280,31 @@ __Build a machine learning model that predicts whether a person makes more than 
 _type your results and analysis here_
 
 ```{python}
-# Include and execute your code here
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import accuracy_score, classification_report
 
+# Define X and y
+X = df_encoded.drop(columns=['income_num', 'target_income_over_50k'])
+y = df_encoded['target_income_over_50k']
+
+# Split into train and test sets
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# Train the model
+model = RandomForestClassifier(random_state=42)
+model.fit(X_train, y_train)
+
+# Predict and evaluate
+y_pred = model.predict(X_test)
+accuracy = accuracy_score(y_test, y_pred)
+
+print(f"Model Accuracy: {accuracy:.2%}")
+print("\nClassification Report:\n", classification_report(y_test, y_pred))
+
+print("df_encoded shape:", df_encoded.shape)
+print(df_encoded.columns[:10])  # check some columns exist
+print(df_encoded['target_income_over_50k'].value_counts())  # check if target exists
 ```
 
 ---
